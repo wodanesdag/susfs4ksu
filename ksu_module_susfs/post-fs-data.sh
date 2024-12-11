@@ -104,36 +104,39 @@ susfs_clone_perm '/data/local/tmp/my_hosts' '/system/etc/hosts'
 ${SUSFS_BIN} add_path_redirect '/system/etc/hosts' '/data/local/tmp/my_hosts'
 EOF
 
-#### Spoof /proc/cmdline ####
+#### Spoof /proc/bootconfig ####
 # No root process detects it for now, and this spoofing won't help much actually #
 cat <<EOF >/dev/null
-FAKE_PROC_CMDLINE_FILE=${MODDIR}/fake_proc_cmdline.txt
-cat /proc/cmdline > ${FAKE_PROC_CMDLINE_FILE}
-sed -i 's/androidboot.verifiedbootstate=orange/androidboot.verifiedbootstate=green/g' ${FAKE_PROC_CMDLINE_FILE}
-sed -i 's/androidboot.vbmeta.device_state=unlocked/androidboot.vbmeta.device_state=locked/g' ${FAKE_PROC_CMDLINE_FILE}
-${SUSFS_BIN} set_proc_cmdline ${FAKE_PROC_CMDLINE_FILE}
+FAKE_BOOTCONFIG=${MODDIR}/fake_bootconfig.txt
+cat /proc/bootconfig > ./fake_bootconfig.txt
+sed -i 's/^androidboot.bootreason.*$/androidboot.bootreason = "reboot"/g' ${FAKE_BOOTCONFIG}
+sed -i 's/^androidboot.vbmeta.device_state.*$/androidboot.vbmeta.device_state = "locked"/g' ${FAKE_BOOTCONFIG}
+sed -i 's/^androidboot.verifiedbootstate.*$/androidboot.verifiedbootstate = "green"/g' ${FAKE_BOOTCONFIG}
+sed -i '/androidboot.verifiedbooterror/d' ${FAKE_BOOTCONFIG}
+sed -i '/androidboot.verifyerrorpart/d' ${FAKE_BOOTCONFIG}
+${SUSFS_BIN} set_bootconfig /data/adb/modules/susfs4ksu/fake_bootconfig.txt
 EOF
 
-#### Enable sus_su mode 1 ####
-cat <<EOF >/dev/null
-enable_sus_su_mode_1(){
-	## Here we manually create an system overlay an copy the sus_su and sus_su_drv_path to ${MODDIR}/system/bin after sus_su is enabled,
-	## as ksu overlay script is executed after all post-fs-data.sh scripts are finished
-
-	rm -rf ${MODDIR}/system 2>/dev/null
-	# Enable sus_su or abort the function if sus_su is not supported #
-	if ! ${SUSFS_BIN} sus_su 1; then
-		return
-	fi
-	mkdir -p ${MODDIR}/system/bin 2>/dev/null
-	# Copy the new generated sus_su_drv_path and 'sus_su' to /system/bin/ and rename 'sus_su' to 'su' #
-	cp -f /data/adb/ksu/bin/sus_su ${MODDIR}/system/bin/su
-	cp -f /data/adb/ksu/bin/sus_su_drv_path ${MODDIR}/system/bin/sus_su_drv_path
-}
-# NOTE: mode 1 has to be run in post-fs-data.sh stage as it needs ksu default overlay mount scheme to mount the su overlay #
-# uncomment it below to enable sus_su with mode 1 #
-#enable_sus_su_mode_1
-EOF
+#### Enable sus_su (Deprecated, do NOT use it) ####
+#cat <<EOF >/dev/null
+#enable_sus_su_mode_1(){
+#	## Here we manually create an system overlay an copy the sus_su and sus_su_drv_path to ${MODDIR}/system/bin after sus_su is enabled,
+#	## as ksu overlay script is executed after all post-fs-data.sh scripts are finished
+#
+#	rm -rf ${MODDIR}/system 2>/dev/null
+#	# Enable sus_su or abort the function if sus_su is not supported #
+#	if ! ${SUSFS_BIN} sus_su 1; then
+#		return
+#	fi
+#	mkdir -p ${MODDIR}/system/bin 2>/dev/null
+#	# Copy the new generated sus_su_drv_path and 'sus_su' to /system/bin/ and rename 'sus_su' to 'su' #
+#	cp -f /data/adb/ksu/bin/sus_su ${MODDIR}/system/bin/su
+#	cp -f /data/adb/ksu/bin/sus_su_drv_path ${MODDIR}/system/bin/sus_su_drv_path
+#}
+## NOTE: mode 1 has to be run in post-fs-data.sh stage as it needs ksu default overlay mount scheme to mount the su overlay #
+## uncomment it below to enable sus_su with mode 1 #
+##enable_sus_su_mode_1
+#EOF
 
 #### Hiding the exposed /proc interface of ext4 loop and jdb2 when mounting modules.img using sus_path ####
 cat <<EOF >/dev/null
