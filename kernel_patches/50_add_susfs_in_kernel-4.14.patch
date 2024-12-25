@@ -41,21 +41,33 @@ index 2f01b271023d..f536cb617674 100644
  		if (dentry->d_parent != parent)
  			goto next;
 diff --git a/fs/devpts/inode.c b/fs/devpts/inode.c
-index 1ed231c23863..b9444326571f 100644
+index 1ed231c23863..80053c93e7a2 100644
 --- a/fs/devpts/inode.c
 +++ b/fs/devpts/inode.c
-@@ -606,6 +606,11 @@ struct dentry *devpts_pty_new(struct pts_fs_info *fsi, int index, void *priv)
- extern int ksu_handle_devpts(struct inode*);
- #endif
+@@ -38,6 +38,10 @@
+ #define DEVPTS_DEFAULT_PTMX_MODE 0000
+ #define PTMX_MINOR	2
  
-+#ifdef CONFIG_KSU_SUSFS_SUS_SU
++#if defined(CONFIG_KSU_SUSFS_SUS_SU) && !defined(CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT)
 +extern bool ksu_devpts_hook;
 +extern int ksu_handle_devpts(struct inode*);
 +#endif
+ /*
+  * sysctl support for setting limits on the number of Unix98 ptys allocated.
+  * Otherwise one can eat up all kernel memory by opening /dev/ptmx repeatedly.
+@@ -617,6 +621,12 @@ void *devpts_get_priv(struct dentry *dentry)
+ #ifdef CONFIG_KSU
+ 	ksu_handle_devpts(dentry->d_inode);
+ #endif
 +
- /**
-  * devpts_get_priv -- get private data for a slave
-  * @pts_inode: inode of the slave
++#if defined(CONFIG_KSU_SUSFS_SUS_SU) && !defined(CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT)
++	if (ksu_devpts_hook) {
++		ksu_handle_devpts(dentry->d_inode);
++	}
++#endif
+ 	if (dentry->d_sb->s_magic != DEVPTS_SUPER_MAGIC)
+ 		return NULL;
+ 	return dentry->d_fsdata;
 diff --git a/fs/exec.c b/fs/exec.c
 index b7dc9dec2b73..08565d0edc56 100644
 --- a/fs/exec.c
@@ -687,7 +699,7 @@ index 3e4f28df6723..7c1166cb16b3 100644
  		return -EINVAL;
  
 diff --git a/fs/overlayfs/inode.c b/fs/overlayfs/inode.c
-index d19cdfe53ff8..2fc2c29cc90f 100644
+index d19cdfe53ff8..d0f25b32f32a 100644
 --- a/fs/overlayfs/inode.c
 +++ b/fs/overlayfs/inode.c
 @@ -69,6 +69,15 @@ int ovl_getattr(const struct path *path, struct kstat *stat,
@@ -698,11 +710,11 @@ index d19cdfe53ff8..2fc2c29cc90f 100644
 +	ovl_path_lowerdata(dentry, &realpath);
 +	if (likely(realpath.mnt && realpath.dentry)) {
 +		old_cred = ovl_override_creds(dentry->d_sb);
-+		err = vfs_getattr(&realpath, stat, request_mask, flags);
-+		goto out;
++		err = vfs_getattr(&realpath, stat);
++		ovl_revert_creds(old_cred);
++		return err;
 +	}
 +#endif
-+
  	type = ovl_path_real(dentry, &realpath);
  	old_cred = ovl_override_creds(dentry->d_sb);
  	err = vfs_getattr(&realpath, stat, request_mask, flags);
@@ -793,21 +805,21 @@ index e2244c134c9c..8746024a17ea 100644
  {
  	enum ovl_path_type type = ovl_path_type(dentry);
 diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
-index 403cbb12a6e9..427765aff4f4 100644
+index 403cbb12a6e9..450cc0d1f23b 100644
 --- a/fs/proc/cmdline.c
 +++ b/fs/proc/cmdline.c
 @@ -4,8 +4,18 @@
  #include <linux/proc_fs.h>
  #include <linux/seq_file.h>
  
-+#ifdef CONFIG_KSU_SUSFS_SPOOF_PROC_CMDLINE
-+extern int susfs_spoof_proc_cmdline(struct seq_file *m);
++#ifdef KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++extern int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
 +#endif
 +
  static int cmdline_proc_show(struct seq_file *m, void *v)
  {
-+#ifdef CONFIG_KSU_SUSFS_SPOOF_PROC_CMDLINE
-+	if (!susfs_spoof_proc_cmdline(m)) {
++#ifdef KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++	if (!susfs_spoof_cmdline_or_bootconfig(m)) {
 +		seq_putc(m, '\n');
 +		return 0;
 +	}
@@ -927,22 +939,17 @@ index e6f4c7b8884b..4c6932ea3b71 100644
  	if (unlikely(buf->error))
  		return buf->error;
 diff --git a/fs/stat.c b/fs/stat.c
-index 504e16e913db..385a88462337 100644
+index 504e16e913db..8af9cc4c3c8f 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
-@@ -21,6 +21,10 @@
- #include <linux/uaccess.h>
- #include <asm/unistd.h>
- 
+@@ -30,8 +30,22 @@
+  * found on the VFS inode structure.  This is the default if no getattr inode
+  * operation is supplied.
+  */
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 +extern void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *stat);
 +#endif
 +
- /**
-  * generic_fillattr - Fill in the basic attributes from the inode struct
-  * @inode: Inode to use as the source
-@@ -32,6 +36,16 @@
-  */
  void generic_fillattr(struct inode *inode, struct kstat *stat)
  {
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
@@ -958,32 +965,6 @@ index 504e16e913db..385a88462337 100644
  	stat->dev = inode->i_sb->s_dev;
  	stat->ino = inode->i_ino;
  	stat->mode = inode->i_mode;
-@@ -167,6 +181,12 @@ extern int ksu_handle_stat(int *dfd, const char __user **filename_user,
-  *
-  * 0 will be returned on success, and a -ve error code if unsuccessful.
-  */
-+
-+#ifdef CONFIG_KSU_SUSFS_SUS_SU
-+extern bool susfs_is_sus_su_hooks_enabled __read_mostly;
-+extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
-+#endif
-+
- int vfs_statx(int dfd, const char __user *filename, int flags,
- 	      struct kstat *stat, u32 request_mask)
- {
-@@ -178,6 +198,12 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
- 	ksu_handle_stat(&dfd, &filename, &flags);
- #endif
- 
-+#ifdef CONFIG_KSU_SUSFS_SUS_SU
-+	if (susfs_is_sus_su_hooks_enabled) {
-+		ksu_handle_stat(&dfd, &filename, &flags);
-+	}
-+#endif
-+
- 	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
- 		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
- 		return -EINVAL;
 diff --git a/fs/statfs.c b/fs/statfs.c
 index ca1084cbe03c..b3a63d0f4c4f 100644
 --- a/fs/statfs.c
@@ -1039,19 +1020,19 @@ index 1ff21c19b0b9..e7538e16d848 100644
  
  struct file; /* forward dec */
 diff --git a/include/linux/sched.h b/include/linux/sched.h
-index 1f66b1d96ccd..3bfb2673d613 100644
+index 1f66b1d96ccd..68683b759581 100644
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
-@@ -1365,6 +1365,9 @@ struct task_struct {
- 	void				*security;
- #endif
- 
+@@ -1369,6 +1369,9 @@ struct task_struct {
+ 	 * New fields for task_struct should be added above here, so that
+ 	 * they are included in the randomized portion of task_struct.
+ 	 */
 +#ifdef CONFIG_KSU_SUSFS
 +	u64 android_kabi_reserved8;
 +#endif
- 	/*
- 	 * New fields for task_struct should be added above here, so that
- 	 * they are included in the randomized portion of task_struct.
+ 	randomized_struct_fields_end
+ 
+ 	/* CPU-specific state of this task: */
 diff --git a/include/linux/sched/user.h b/include/linux/sched/user.h
 index 0dcf4e480ef7..53342d5682ed 100644
 --- a/include/linux/sched/user.h
