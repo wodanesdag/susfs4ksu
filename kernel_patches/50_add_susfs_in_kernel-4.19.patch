@@ -50,38 +50,6 @@ index 98363cb3d4b1..dafafce397fd 100644
  		spin_lock(&dentry->d_lock);
  		if (dentry->d_parent != parent)
  			goto next;
-diff --git a/fs/devpts/inode.c b/fs/devpts/inode.c
-index 82eadcbf722c..c0d3933092d4 100644
---- a/fs/devpts/inode.c
-+++ b/fs/devpts/inode.c
-@@ -603,6 +603,11 @@ struct dentry *devpts_pty_new(struct pts_fs_info *fsi, int index, void *priv)
- extern int ksu_handle_devpts(struct inode*);
- #endif
- 
-+#ifdef CONFIG_KSU_SUSFS_SUS_SU
-+extern bool ksu_devpts_hook;
-+extern int ksu_handle_devpts(struct inode*);
-+#endif
-+
- /**
-  * devpts_get_priv -- get private data for a slave
-  * @pts_inode: inode of the slave
-diff --git a/fs/exec.c b/fs/exec.c
-index 33f2e233a553..cf5c16ca4143 100644
---- a/fs/exec.c
-+++ b/fs/exec.c
-@@ -1734,6 +1734,11 @@ static int __do_execve_file(int fd, struct filename *filename,
- 	if (IS_ERR(filename))
- 		return PTR_ERR(filename);
- 
-+#ifdef CONFIG_KSU_SUSFS_SUS_SU
-+	if (susfs_is_sus_su_hooks_enabled)
-+		ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
-+#endif
-+
- 	/*
- 	 * We move the actual failure in case of RLIMIT_NPROC excess from
- 	 * set*uid() to execve() because too many poorly written programs
 diff --git a/fs/inode.c b/fs/inode.c
 index 067febdbc426..264cc12e45bd 100644
 --- a/fs/inode.c
@@ -670,23 +638,6 @@ index 0e25713d09fa..42e1560e1c55 100644
 +}
 +#endif
 \ No newline at end of file
-diff --git a/fs/open.c b/fs/open.c
-index 38ff515fbdf1..671348f06d24 100644
---- a/fs/open.c
-+++ b/fs/open.c
-@@ -362,6 +362,12 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
-     ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
- #endif
- 
-+#ifdef CONFIG_KSU_SUSFS_SUS_SU
-+	if (susfs_is_sus_su_hooks_enabled) {
-+		ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
-+	}
-+#endif
-+
- 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
- 		return -EINVAL;
- 
 diff --git a/fs/overlayfs/inode.c b/fs/overlayfs/inode.c
 index 7f3787a6b445..47f0a148857b 100644
 --- a/fs/overlayfs/inode.c
@@ -925,7 +876,7 @@ index 3c5ce8a0ddc9..012307a74ae2 100644
  	if (unlikely(buf->error))
  		return buf->error;
 diff --git a/fs/stat.c b/fs/stat.c
-index be7d75d25c96..54a208bcefc1 100644
+index be7d75d25c96..30dd57e0eb03 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
 @@ -17,10 +17,17 @@
@@ -963,32 +914,6 @@ index be7d75d25c96..54a208bcefc1 100644
  	stat->dev = inode->i_sb->s_dev;
  	stat->ino = inode->i_ino;
  	stat->mode = inode->i_mode;
-@@ -167,6 +184,12 @@ extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *fla
-  *
-  * 0 will be returned on success, and a -ve error code if unsuccessful.
-  */
-+
-+#ifdef CONFIG_KSU_SUSFS_SUS_SU
-+extern bool susfs_is_sus_su_hooks_enabled __read_mostly;
-+extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
-+#endif
-+
- int vfs_statx(int dfd, const char __user *filename, int flags,
- 	      struct kstat *stat, u32 request_mask)
- {
-@@ -178,6 +201,12 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
- 	ksu_handle_stat(&dfd, &filename, &flags);
- #endif
- 
-+#ifdef CONFIG_KSU_SUSFS_SUS_SU
-+	if (susfs_is_sus_su_hooks_enabled) {
-+		ksu_handle_stat(&dfd, &filename, &flags);
-+	}
-+#endif
-+
- 	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
- 		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
- 		return -EINVAL;
 diff --git a/fs/statfs.c b/fs/statfs.c
 index 29786598c2b5..769d446e0c56 100644
 --- a/fs/statfs.c
