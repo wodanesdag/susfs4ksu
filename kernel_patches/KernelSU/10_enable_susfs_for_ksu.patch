@@ -1,10 +1,47 @@
+From 1e750de25930e875612bbec0410de0088474c00b Mon Sep 17 00:00:00 2001
+From: sidex15 <24408329+sidex15@users.noreply.github.com>
+Date: Sun, 12 Jan 2025 20:53:50 +0800
+Subject: [PATCH] Kernel: Implement SUSFS v1.5.3+
+
+---
+ .gitignore               |   3 +
+ kernel/Kconfig           | 132 ++++++++++++++
+ kernel/Makefile          |  51 +++++-
+ kernel/allowlist.c       |  10 +-
+ kernel/apk_sign.c        |   2 +-
+ kernel/apk_sign.h        |   2 +-
+ kernel/core_hook.c       | 384 +++++++++++++++++++++++++++++++++++++--
+ kernel/kernel_compat.c   |  10 +
+ kernel/kernel_compat.h   |   1 +
+ kernel/ksu.c             |  16 +-
+ kernel/ksud.c            |  14 +-
+ kernel/ksud.h            |   2 +-
+ kernel/manager.h         |   2 +-
+ kernel/selinux/rules.c   |  16 +-
+ kernel/selinux/selinux.c |  95 +++++++++-
+ kernel/selinux/selinux.h |  24 ++-
+ kernel/sucompat.c        |   7 +-
+ kernel/throne_tracker.c  |   4 +-
+ kernel/throne_tracker.h  |   2 +-
+ 19 files changed, 707 insertions(+), 70 deletions(-)
+
+diff --git a/.gitignore b/.gitignore
+index 706fd07f..cbd335d2 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,2 +1,5 @@
+ .idea
+ .vscode
++*.rej
++*.patch
++*.orig
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index 67f177f4..049418ba 100644
+index 1f3802f6..7902bad6 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
-@@ -16,4 +16,136 @@ config KSU_DEBUG
- 	help
- 	  Enable KernelSU debug mode.
+@@ -24,4 +24,136 @@ config KSU_ALLOWLIST_WORKAROUND
+           Enable session keyring init workaround for problematic devices.
+           Useful for situations where the SU allowlist is not kept after a reboot.
  
 +menu "KernelSU - SUSFS"
 +config KSU_SUSFS
@@ -72,7 +109,7 @@ index 67f177f4..049418ba 100644
 +config KSU_SUSFS_SUS_OVERLAYFS
 +    bool "Enable to automatically spoof kstat and kstatfs for overlayed files/directories"
 +    depends on KSU_SUSFS
-+    default n
++    default y
 +    help
 +      - Automatically spoof the kstat and kstatfs for overlayed files/directories.
 +      - Enable it if you are using legacy KernelSU and dont have auto hide features enabled.
@@ -140,7 +177,7 @@ index 67f177f4..049418ba 100644
 +
  endmenu
 diff --git a/kernel/Makefile b/kernel/Makefile
-index 66929756..1e9ce687 100644
+index ad3186be..cd199a02 100644
 --- a/kernel/Makefile
 +++ b/kernel/Makefile
 @@ -29,14 +29,6 @@ $(warning "KSU_GIT_VERSION not defined! It is better to make KernelSU-Next a git
@@ -158,53 +195,10 @@ index 66929756..1e9ce687 100644
  ifndef KSU_NEXT_EXPECTED_SIZE
  KSU_NEXT_EXPECTED_SIZE := 0x3e6
  endif
-@2 -56,51 +48,69 @@ $(info -- KernelSU Manager signature hash: $(KSU_NEXT_EXPECTED_HASH))
- ccflags-y += -DEXPECTED_NEXT_SIZE=$(KSU_NEXT_EXPECTED_SIZE)
- ccflags-y += -DEXPECTED_NEXT_HASH=\"$(KSU_NEXT_EXPECTED_HASH)\"
+@@ -58,6 +50,18 @@ ccflags-y += -DEXPECTED_NEXT_HASH=\"$(KSU_NEXT_EXPECTED_HASH)\"
  
  ccflags-y += -DKSU_UMOUNT
-
- ifneq ($(shell grep -Eq "^static int can_umount" $(srctree)/fs/namespace.c; echo $$?),0)
--$(info -- KSU_NEXT: adding function 'static int can_umount(const struct path *path, int flags);' to $(srctree)/fs/namespace.c)
--CAN_UMOUNT = static int can_umount(const struct path *path, int flags)\n\
--{\n\t\
--        struct mount *mnt = real_mount(path->mnt);\n\t\
--        if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))\n\t\t\
--                return -EINVAL;\n\t\
--        if (!may_mount())\n\t\t\
--                return -EPERM;\n\t\
--        if (path->dentry != path->mnt->mnt_root)\n\t\t\
--                return -EINVAL;\n\t\
--        if (!check_mnt(mnt))\n\t\t\
--                return -EINVAL;\n\t\
--        if (mnt->mnt.mnt_flags & MNT_LOCKED)\n\t\t\
--                return -EINVAL;\n\t\
--        if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))\n\t\t\
--                return -EPERM;\n\t\
--        return 0;\n\
--}\n
--$(shell sed -i '/^static bool is_mnt_ns_file/i $(CAN_UMOUNT)' $(srctree)/fs/namespace.c;)
-+$(info -- KSU_SUSFS: adding function 'static int can_umount(const struct path *path, int flags);' to $(srctree)/fs/namespace.c)
-+CAN_UMOUNT = static int can_umount(const struct path *path, int flags)\n\
-+{\n\t\
-+        struct mount *mnt = real_mount(path->mnt);\n\t\
-+        if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))\n\t\t\
-+                return -EINVAL;\n\t\
-+        if (!may_mount())\n\t\t\
-+                return -EPERM;\n\t\
-+        if (path->dentry != path->mnt->mnt_root)\n\t\t\
-+                return -EINVAL;\n\t\
-+        if (!check_mnt(mnt))\n\t\t\
-+                return -EINVAL;\n\t\
-+        if (mnt->mnt.mnt_flags & MNT_LOCKED)\n\t\t\
-+                return -EINVAL;\n\t\
-+        if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))\n\t\t\
-+                return -EPERM;\n\t\
-+        return 0;\n\
-+}\n
-+$(shell sed -i '/^static bool is_mnt_ns_file/i $(CAN_UMOUNT)' $(srctree)/fs/namespace.c;)
- endif
-
+ 
 +ccflags-y += -Wno-implicit-function-declaration -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat
 +ccflags-y += -Wno-declaration-after-statement -Wno-unused-function
 +
@@ -217,27 +211,15 @@ index 66929756..1e9ce687 100644
 +ccflags-y += -DKSU_COMPAT_HAS_SELINUX_STATE
 +endif
 +
--ifneq ($(shell grep -Eq "^int path_umount" $(srctree)/fs/namespace.c; echo $$?),0)
--$(info -- KSU_NEXT: adding function 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/namespace.c)
--PATH_UMOUNT = int path_umount(struct path *path, int flags)\n\
--{\n\t\
--        struct mount *mnt = real_mount(path->mnt);\n\t\
--        int ret;\n\t\
--        ret = can_umount(path, flags);\n\t\
--        if (!ret)\n\t\t\
--                ret = do_umount(mnt, flags);\n\t\
--        dput(path->dentry);\n\t\
--        mntput_no_expire(mnt);\n\t\
--        return ret;\n\
--}\n
--$(shell sed -i '/^static bool is_mnt_ns_file/i $(PATH_UMOUNT)' $(srctree)/fs/namespace.c;)
--endif
--
--ifneq ($(shell grep -Eq "^int path_umount" $(srctree)/fs/internal.h; echo $$?),0)
--$(shell sed -i '/^extern void __init mnt_init/a int path_umount(struct path *path, int flags);' $(srctree)/fs/internal.h;)
--$(info -- KSU_NEXT: adding 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/internal.h)
--endif
-  
+ ifneq ($(shell grep -Eq "^static int can_umount" $(srctree)/fs/namespace.c; echo $$?),0)
+ $(info -- KSU_NEXT: adding function 'static int can_umount(const struct path *path, int flags);' to $(srctree)/fs/namespace.c)
+ CAN_UMOUNT = static int can_umount(const struct path *path, int flags)\n\
+@@ -101,7 +105,34 @@ $(shell sed -i '/^extern void __init mnt_init/a int path_umount(struct path *pat
+ $(info -- KSU_NEXT: adding 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/internal.h)
+ endif
+ 
+-ccflags-y += -Wno-implicit-function-declaration -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat
+-ccflags-y += -Wno-declaration-after-statement -Wno-unused-function
 +ifneq ($(shell grep -Eq "^int path_umount" $(srctree)/fs/namespace.c; echo $$?),0)
 +$(info -- KSU_SUSFS: adding function 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/namespace.c)
 +PATH_UMOUNT = int path_umount(struct path *path, int flags)\n\
@@ -253,15 +235,12 @@ index 66929756..1e9ce687 100644
 +}\n
 +$(shell sed -i '/^static bool is_mnt_ns_file/i $(PATH_UMOUNT)' $(srctree)/fs/namespace.c;)
 +endif
-+
+ 
 +ifneq ($(shell grep -Eq "^int path_umount" $(srctree)/fs/internal.h; echo $$?),0)
 +$(shell sed -i '/^extern void __init mnt_init/a int path_umount(struct path *path, int flags);' $(srctree)/fs/internal.h;)
 +$(info -- KSU_SUSFS: adding 'int path_umount(struct path *path, int flags);' to $(srctree)/fs/internal.h)
 +endif
--ccflags-y += -Wno-implicit-function-declaration -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat
--ccflags-y += -Wno-declaration-after-statement -Wno-unused-function
- 
--# Keep a new line here!! Because someone may append config
++
 +## For susfs stuff ##
 +ifeq ($(shell test -e $(srctree)/fs/susfs.c; echo $$?),0)
 +$(eval SUSFS_VERSION=$(shell cat $(srctree)/include/linux/susfs.h | grep -E '^#define SUSFS_VERSION' | cut -d' ' -f3 | sed 's/"//g'))
@@ -271,8 +250,7 @@ index 66929756..1e9ce687 100644
 +$(info -- You have not integrate susfs in your kernel.)
 +$(info -- Read: https://gitlab.com/simonpunk/susfs4ksu)
 +endif
-+# Keep a new line here!! Because someone may append config
-\ No newline at end of file
+ # Keep a new line here!! Because someone may append config
 diff --git a/kernel/allowlist.c b/kernel/allowlist.c
 index 4fbba935..31fd5b2d 100644
 --- a/kernel/allowlist.c
@@ -304,7 +282,7 @@ index 4fbba935..31fd5b2d 100644
  {
  	u32 magic = FILE_MAGIC;
  	u32 version = FILE_FORMAT_VERSION;
-@@ -394,7 +394,7 @@ exit:
+@@ -394,7 +394,7 @@ void do_save_allow_list(struct work_struct *work)
  	filp_close(fp, 0);
  }
  
@@ -323,22 +301,17 @@ index 4fbba935..31fd5b2d 100644
  	return ksu_queue_work(&ksu_save_work);
  }
 diff --git a/kernel/apk_sign.c b/kernel/apk_sign.c
-index ba8b73f2..9af28285 100644
+index 384bb1c5..87401814 100644
 --- a/kernel/apk_sign.c
 +++ b/kernel/apk_sign.c
-@@ -314,7 +314,12 @@ module_param_cb(ksu_debug_manager_uid, &expected_size_ops,
+@@ -314,7 +314,7 @@ module_param_cb(ksu_debug_manager_uid, &expected_size_ops,
  
  #endif
  
 -bool is_manager_apk(char *path)
 +bool ksu_is_manager_apk(char *path)
  {
-+#ifdef CONFIG_KSU_SUSFS
-+	return (check_v2_signature(path, EXPECTED_NEXT_SIZE, EXPECTED_NEXT_HASH) ||
-+			check_v2_signature(path, 384, "7e0c6d7278a3bb8e364e0fcba95afaf3666cf5ff3c245a3b63c8833bd0445cc4")); // 5ec1cff
-+#else
  	return check_v2_signature(path, EXPECTED_NEXT_SIZE, EXPECTED_NEXT_HASH);
-+#endif
  }
 \ No newline at end of file
 diff --git a/kernel/apk_sign.h b/kernel/apk_sign.h
@@ -354,7 +327,7 @@ index bed501c4..e02aa514 100644
  
  #endif
 diff --git a/kernel/core_hook.c b/kernel/core_hook.c
-index 009216ef..7b0a1974 100644
+index 93be8bad..4003ec01 100644
 --- a/kernel/core_hook.c
 +++ b/kernel/core_hook.c
 @@ -33,6 +33,10 @@
@@ -408,7 +381,7 @@ index 009216ef..7b0a1974 100644
  {
  	struct cred *cred;
  
-@@ -167,7 +186,7 @@ void escape_to_root(void)
+@@ -171,7 +190,7 @@ void escape_to_root(void)
  
  	setup_groups(profile, cred);
  
@@ -417,7 +390,7 @@ index 009216ef..7b0a1974 100644
  }
  
  int ksu_handle_rename(struct dentry *old_dentry, struct dentry *new_dentry)
-@@ -204,7 +223,7 @@ int ksu_handle_rename(struct dentry *old_dentry, struct dentry *new_dentry)
+@@ -208,7 +227,7 @@ int ksu_handle_rename(struct dentry *old_dentry, struct dentry *new_dentry)
  	pr_info("renameat: %s -> %s, new path: %s\n", old_dentry->d_iname,
  		new_dentry->d_iname, buf);
  
@@ -426,7 +399,7 @@ index 009216ef..7b0a1974 100644
  
  	return 0;
  }
-@@ -229,7 +248,7 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
+@@ -233,7 +252,7 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
  	}
  
  	bool from_root = 0 == current_uid().val;
@@ -435,7 +408,7 @@ index 009216ef..7b0a1974 100644
  
  	if (!from_root && !from_manager) {
  		// only root or manager can access this interface
-@@ -253,7 +272,7 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
+@@ -257,7 +276,7 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
  	if (arg2 == CMD_GRANT_ROOT) {
  		if (is_allow_su()) {
  			pr_info("allow root for: %d\n", current_uid().val);
@@ -444,7 +417,7 @@ index 009216ef..7b0a1974 100644
  			if (copy_to_user(result, &reply_ok, sizeof(reply_ok))) {
  				pr_err("grant_root: prctl reply error\n");
  			}
-@@ -288,7 +307,7 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
+@@ -292,7 +311,7 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
  			if (!post_fs_data_lock) {
  				post_fs_data_lock = true;
  				pr_info("post-fs-data triggered\n");
@@ -453,7 +426,7 @@ index 009216ef..7b0a1974 100644
  			}
  			break;
  		}
-@@ -315,7 +334,7 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
+@@ -319,7 +338,7 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
  		if (!from_root) {
  			return 0;
  		}
@@ -462,7 +435,7 @@ index 009216ef..7b0a1974 100644
  			if (copy_to_user(result, &reply_ok, sizeof(reply_ok))) {
  				pr_err("sepolicy: prctl reply error\n");
  			}
-@@ -376,6 +395,282 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
+@@ -380,6 +399,282 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
  		return 0;
  	}
  
@@ -745,7 +718,7 @@ index 009216ef..7b0a1974 100644
  	// all other cmds are for 'root manager'
  	if (!from_manager) {
  		return 0;
-@@ -443,11 +738,15 @@ static bool should_umount(struct path *path)
+@@ -447,11 +742,15 @@ static bool should_umount(struct path *path)
  		return false;
  	}
  
@@ -761,7 +734,7 @@ index 009216ef..7b0a1974 100644
  }
  
  static int ksu_umount_mnt(struct path *path, int flags)
-@@ -460,7 +759,7 @@ static int ksu_umount_mnt(struct path *path, int flags)
+@@ -464,7 +763,7 @@ static int ksu_umount_mnt(struct path *path, int flags)
  #endif
  }
  
@@ -770,7 +743,7 @@ index 009216ef..7b0a1974 100644
  {
  	struct path path;
  	int err = kern_path(mnt, 0, &path);
-@@ -484,6 +783,19 @@ static void try_umount(const char *mnt, bool check_mnt, int flags)
+@@ -488,6 +787,19 @@ static void try_umount(const char *mnt, bool check_mnt, int flags)
  	}
  }
  
@@ -790,7 +763,7 @@ index 009216ef..7b0a1974 100644
  int ksu_handle_setuid(struct cred *new, const struct cred *old)
  {
  	// this hook is used for umounting overlayfs for some uid, if there isn't any module mounted, just ignore it!
-@@ -503,6 +815,22 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
+@@ -507,6 +819,22 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
  		return 0;
  	}
  
@@ -813,7 +786,7 @@ index 009216ef..7b0a1974 100644
  	if (!is_appuid(new_uid) || is_unsupported_uid(new_uid.val)) {
  		// pr_info("handle setuid ignore non application or isolated uid: %d\n", new_uid.val);
  		return 0;
-@@ -512,7 +840,17 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
+@@ -516,7 +844,17 @@ int ksu_handle_setuid(struct cred *new, const struct cred *old)
  		// pr_info("handle setuid ignore allowed application: %d\n", new_uid.val);
  		return 0;
  	}
@@ -885,10 +858,10 @@ index 009216ef..7b0a1974 100644
  	return 0;
  }
 diff --git a/kernel/kernel_compat.c b/kernel/kernel_compat.c
-index b242bc63..0ec3df62 100644
+index a1886433..f898707e 100644
 --- a/kernel/kernel_compat.c
 +++ b/kernel/kernel_compat.c
-@@ -77,6 +77,16 @@ void ksu_android_ns_fs_check()
+@@ -76,6 +76,16 @@ void ksu_android_ns_fs_check()
  	task_unlock(current);
  }
  
@@ -904,9 +877,9 @@ index b242bc63..0ec3df62 100644
 +
  struct file *ksu_filp_open_compat(const char *filename, int flags, umode_t mode)
  {
- #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) || defined(CONFIG_IS_HW_HISI)
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) || defined(CONFIG_IS_HW_HISI) || defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
 diff --git a/kernel/kernel_compat.h b/kernel/kernel_compat.h
-index ba998185..34050e73 100644
+index 6d79f7ed..b0d664a9 100644
 --- a/kernel/kernel_compat.h
 +++ b/kernel/kernel_compat.h
 @@ -29,6 +29,7 @@ extern struct key *init_session_keyring;

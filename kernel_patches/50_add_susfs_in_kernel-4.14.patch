@@ -758,9 +758,10 @@ diff --git a/fs/proc/cmdline.c b/fs/proc/cmdline.c
 index 403cbb12a6e9..7c3fad2cb84c 100644
 --- a/fs/proc/cmdline.c
 +++ b/fs/proc/cmdline.c
-@@ -72,11 +72,21 @@
+@@ -10,8 +10,19 @@
+ static char patched_cmdline[COMMAND_LINE_SIZE];
  #endif
-
+ 
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 +extern int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
 +#endif
@@ -773,13 +774,11 @@ index 403cbb12a6e9..7c3fad2cb84c 100644
 +		return 0;
 +	}
 +#endif
- #ifdef ALTER_CMDLINE
- 	seq_printf(m, "%s\n", proc_command_line);
- #else
++
+ #ifndef CONFIG_PROC_BEGONIA_CMDLINE
  	seq_printf(m, "%s\n", saved_command_line);
- #endif
- 	return 0;
- }
+ #else
+
 diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
 index b8708a383b85..8c1508242988 100644
 --- a/fs/proc/task_mmu.c
@@ -1058,22 +1057,25 @@ diff --git a/kernel/sys.c b/kernel/sys.c
 index 4dfc62c1b184..9b26007eeca5 100644
 --- a/kernel/sys.c
 +++ b/kernel/sys.c
-@@ -1182,12 +1182,18 @@ static int override_release(char __user *release, size_t len)
+@@ -1185,6 +1185,9 @@
  	return ret;
  }
  
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 +extern void susfs_spoof_uname(struct new_utsname* tmp);
 +#endif
- SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
- {
- 	struct new_utsname tmp;
  
- 	down_read(&uts_sem);
- 	memcpy(&tmp, utsname(), sizeof(tmp));
+ static uint64_t netbpfload_pid = 0;
+ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
+@@ -1200,6 +1203,10 @@
+ 		pr_debug("fake uname: %s/%d release=%s\n",
+ 			 current->comm, current->pid, tmp.release);
+ 	}
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 +	susfs_spoof_uname(&tmp);
 +#endif
++
  	up_read(&uts_sem);
  	if (copy_to_user(name, &tmp, sizeof(tmp)))
  		return -EFAULT;
+
