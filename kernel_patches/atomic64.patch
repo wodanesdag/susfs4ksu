@@ -1,5 +1,7 @@
---- cred.h	2025-01-16 23:23:26.256995127 +0000
-+++ modcred.h	2025-01-16 23:23:26.256995127 +0000
+diff --git a/include/linux/cred.h b/include/linux/cred.h
+index f7d7ce442347..c1238aa1577a 100644
+--- a/include/linux/cred.h
++++ b/include/linux/cred.h
 @@ -253,6 +253,17 @@
  	return get_new_cred(nonconst_cred);
  }
