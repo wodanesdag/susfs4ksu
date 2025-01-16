@@ -1,13 +1,33 @@
-diff --git a/include/linux/cred.h b/include/linux/cred.h
-index b1a2c3d4e5f6..a7b8c9d0e1f2 100644
---- a/include/linux/cred.h
-+++ b/include/linux/cred.h
-@@ -270,7 +270,7 @@
- 
- 	if (cred) {
- 		validate_creds(cred);
--		if (atomic_long_dec_and_test(&(cred)->usage))
-+		if (atomic64_long_dec_and_test(&(cred)->usage))
- 			__put_cred(cred);
- 	}
+--- cred.h	2025-01-16 23:23:26.256995127 +0000
++++ modcred.h	2025-01-16 23:23:26.256995127 +0000
+@@ -253,6 +253,17 @@
+ 	return get_new_cred(nonconst_cred);
  }
+ 
++static inline const struct cred *get_cred_rcu(const struct cred *cred)
++{
++	struct cred *nonconst_cred = (struct cred *) cred;
++	if (!cred)
++		return NULL;
++	if (!atomic64_long_inc_not_zero(&nonconst_cred->usage))
++		return NULL;
++	validate_creds(cred);
++	return cred;
++}
++
+ /**
+  * put_cred - Release a reference to a set of credentials
+  * @cred: The credentials to release
+diff --git a/kernel/cred.c b/kernel/cred.c
+index f5cd2e099d52..13b15357f237 100644
+--- a/kernel/cred.c
++++ b/kernel/cred.c
+@@ -197,7 +197,7 @@
+ 	do {
+ 		cred = __task_cred((task));
+ 		BUG_ON(!cred);
+-	} while (!atomic_long_inc_not_zero(&((struct cred *)cred)->usage));
++	} while (!get_cred_rcu(cred));
+ 
+ 	rcu_read_unlock();
+ 	return cred;
