@@ -71,7 +71,7 @@ diff --git a/fs/stat.c b/fs/stat.c
 index 376543199b5a..82adcef03ecc 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
-@@ -147,6 +147,9 @@
+@@ -164,6 +164,9 @@
  	return error;
  }
  EXPORT_SYMBOL(vfs_statx_fd);
@@ -81,13 +81,13 @@ index 376543199b5a..82adcef03ecc 100644
  
  /**
   * vfs_statx - Get basic and extra attributes by filename
-@@ -170,6 +173,9 @@
+@@ -186,6 +189,9 @@
+ 	struct path path;
  	int error = -EINVAL;
  	unsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
- 
 +    #ifdef CONFIG_KSU
 +	ksu_handle_stat(&dfd, &filename, &flags);
 +    #endif
+ 
  	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
  		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
- 		return -EINVAL;
