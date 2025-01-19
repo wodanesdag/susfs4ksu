@@ -2,7 +2,18 @@ diff --git a/fs/exec.c b/fs/exec.c
 index ac59664eaecf..bdd585e1d2cc 100644
 --- a/fs/exec.c
 +++ b/fs/exec.c
-@@ -1714,6 +1714,14 @@
+@@ -74,6 +74,10 @@
+ 
+ #include <mt-plat/mtk_pidmap.h>
+ 
++#ifdef CONFIG_KSU
++#include "KernelSU-Next/kernel/include/ksu_hook.h"
++#endif
++
+ int suid_dumpable = 0;
+ 
+ static LIST_HEAD(formats);
+@@ -1714,6 +1718,14 @@
  			      struct user_arg_ptr envp,
  			      int flags)
  {
