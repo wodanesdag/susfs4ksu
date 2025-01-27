@@ -84,3 +84,4 @@ enable_sus_su_mode_1(){
 	${SUSFS_BIN} add_try_umount /apex/com.android.art/bin/dex2oat32 1
 	${SUSFS_BIN} add_try_umount /apex/com.android.art/bin/dex2oat64 1
 }
+

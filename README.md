@@ -10,24 +10,16 @@
 - The susfs kernel patches may differ for different kernel version or even on the same kernel version, you may need to create your own patches for your kernel.
 
 ## Patch Instruction (For non-GKI only) ##
-**- Prerequisite -**
-1. All susfs patches are based on the original official KernelSU (the one from weishu), so you should clone his repo for a better patching result.
-2. After cloning the KernelSU to your kernel source, inside KernelSU folder, apply a revert commit from `https://github.com/tiann/KernelSU/commit/898e9d4f8ca9b2f46b0c6b36b80a872b5b88d899`
-3. Also you have to manually implement the NON-KPROBE hooks in the kernel by yourself since `SUS_SU` feature is NOT supported for NON-GKI kernel anymore. See `https://kernelsu.org/guide/how-to-integrate-for-non-gki.html#manually-modify-the-kernel-source`
-4. Replace all lines starting with `#ifdef CONFIG_KPROBES` to `#if defined(CONFIG_KPROBES) && 0` for all files within KernelSU folder, this is to tell KernelSU not to use any kprobe hooks.
-5. SUSFS now supports AUTO_ADD_ features for Magick Mount KernelSU as long as you have `KSU_SUSFS_HAS_MAGIC_MOUNT` feature enabled.
-
-**- Apply SUSFS patches -**
-1. Clone the repo with a tag or release version, as they are more stable in general.
+1. Clone the repo with a tag that has release version, as tag with release version is more stable
 2. Run `cp ./kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch $KERNEL_ROOT/KernelSU/`
 3. Run `cp ./kernel_patches/50_add_susfs_in_kernel-<kernel_version>.patch $KERNEL_ROOT/`
 4. Run `cp ./kernel_patches/fs/* $KERNEL_ROOT/fs/`
 5. Run `cp ./kernel_patches/include/linux/* $KERNEL_ROOT/include/linux/`
 6. Run `cd $KERNEL_ROOT/KernelSU` and then `patch -p1 < 10_enable_susfs_for_ksu.patch`
-7. Run `cd $KERNEL_ROOT` and then `patch -p1 < 50_add_susfs_in_kernel-4.14.patch`, **if there are failed patches, you may try to patch them manually by yourself.**
-8. If you want to make your kernel support other KSU manager variant, you can add its own hash size and hash in `ksu_is_manager_apk()` function in `KernelSU/kernel/apk_sign.c`
-9. Make sure again to have `CONFIG_KSU` and `CONFIG_KSU_SUSFS` enabled before building the kernel, some other SUSFS feature may be disabled by default, you may enable/disable them via `menuconfig`, `kernel defconfig`, or change the `default [y|n]` option under each `config KSU_SUSFS_` option in `$KernelSU_repo/kernel/Kconfig` if you build with a new defconfig every time.
-10. If your KernelSU manager is using magic mount, then you should enable **`KSU_SUSFS_HAS_MAGIC_MOUNT`** option so that mounts can be handled by AUTO_ADD_ features.
+7. Run `cd $KERNEL_ROOT` and then `patch -p1 < 50_add_susfs_in_kernel.patch`, **if there are failed patches, you may try to patch them manually by yourself.**
+8. Make sure again to have `CONFIG_KSU` and `CONFIG_KSU_SUSFS` enabled before building the kernel, some other SUSFS feature may be disabled by default, you may enable/disable them via `menuconfig`, `kernel defconfig`, or change the `default [y|n]` option under each `config KSU_SUSFS_` option in `$KernelSU_repo/kernel/Kconfig` if you build with a new defconfig every time.
+9. If your kernel already has the **KSU non-kprobe hook patches** applied, then you have to **`DISABLE`** the `CONFIG_KSU_SUSFS_SUS_SU` option.
+10. If your KernelSU repo is a fork by 5ec1cff, then you should enable **`KSU_SUSFS_HAS_MAGIC_MOUNT`** option.
 11. For some compilor error, please refer to the section **[Known Compilor Issues]** below.
 12. For other building tips, please refer to the section **[Other Building Tips]** below.
 
