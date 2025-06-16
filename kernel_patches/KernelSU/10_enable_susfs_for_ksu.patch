@@ -721,7 +721,7 @@ index 2307e665..b882186e 100644
 +			enabled_features |= (1 << 11);
 +#endif
 +#ifdef CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
-+			enabled_features |= (1 << 12);
++			enabled_features |= (1 << 13);
 +#endif
 +			error = copy_to_user((void __user*)arg3, (void*)&enabled_features, sizeof(enabled_features));
 +			pr_info("susfs: CMD_SUSFS_SHOW_ENABLED_FEATURES -> ret: %d\n", error);
