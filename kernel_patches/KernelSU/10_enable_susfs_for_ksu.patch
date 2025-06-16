@@ -290,7 +290,7 @@ index bed501c4..e02aa514 100644
  
  #endif
 diff --git a/kernel/core_hook.c b/kernel/core_hook.c
-index 2307e665..217552a8 100644
+index 2307e665..412494eb 100644
 --- a/kernel/core_hook.c
 +++ b/kernel/core_hook.c
 @@ -35,6 +35,10 @@
@@ -700,28 +700,28 @@ index 2307e665..217552a8 100644
 +			enabled_features |= (1 << 4);
 +#endif
 +#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-+			enabled_features |= (1 << 6);
++			enabled_features |= (1 << 5);
 +#endif
 +#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
-+			enabled_features |= (1 << 7);
++			enabled_features |= (1 << 6);
 +#endif
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-+			enabled_features |= (1 << 8);
++			enabled_features |= (1 << 7);
 +#endif
 +#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
-+			enabled_features |= (1 << 9);
++			enabled_features |= (1 << 8);
 +#endif
 +#ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-+			enabled_features |= (1 << 10);
++			enabled_features |= (1 << 9);
 +#endif
 +#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-+			enabled_features |= (1 << 11);
++			enabled_features |= (1 << 10);
 +#endif
 +#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-+			enabled_features |= (1 << 12);
++			enabled_features |= (1 << 11);
 +#endif
 +#ifdef CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
-+			enabled_features |= (1 << 14);
++			enabled_features |= (1 << 13);
 +#endif
 +			error = copy_to_user((void __user*)arg3, (void*)&enabled_features, sizeof(enabled_features));
 +			pr_info("susfs: CMD_SUSFS_SHOW_ENABLED_FEATURES -> ret: %d\n", error);
