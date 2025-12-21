@@ -799,7 +799,7 @@ index b655b5e4..99b992ab 100644
  extern void ksu_lsm_hook_init(void);
  void ksu_setuid_hook_init(void)
 diff --git a/kernel/sucompat.c b/kernel/sucompat.c
-index b06e1813..9b0eda0f 100644
+index b06e1813..78f83501 100644
 --- a/kernel/sucompat.c
 +++ b/kernel/sucompat.c
 @@ -20,6 +20,12 @@
@@ -823,10 +823,40 @@ index b06e1813..9b0eda0f 100644
  int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
  		int *mode, int *__unused_flags)
  {
-@@ -233,6 +240,176 @@ int __ksu_handle_devpts(struct inode *inode)
- 		sec->sid = ksu_file_sid;
+@@ -203,6 +210,85 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
  	return 0;
  }
+ 
++int __ksu_handle_devpts(struct inode *inode)
++{
++#ifndef KSU_KPROBES_HOOK
++	if (!ksu_su_compat_enabled)
++		return 0;
++#endif
++
++	if (!current->mm) {
++		return 0;
++	}
++
++	uid_t uid = current_uid().val;
++	if (uid % 100000 < 10000) {
++		// not untrusted_app, ignore it
++		return 0;
++	}
++
++	if (likely(!ksu_is_allow_uid(uid)))
++		return 0;
++
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0) || defined(KSU_OPTIONAL_SELINUX_INODE)
++	struct inode_security_struct *sec = selinux_inode(inode);
++#else
++	struct inode_security_struct *sec = (struct inode_security_struct *)inode->i_security;
++#endif
++
++	if (ksu_file_sid && sec)
++		sec->sid = ksu_file_sid;
++	return 0;
++}
 +#else
 +static const char sh_path[] = SH_PATH;
 +static const char su_path[] = SU_PATH;
@@ -876,40 +906,19 @@ index b06e1813..9b0eda0f 100644
 +    return 0;
 +}
 +
-+int __ksu_handle_devpts(struct inode *inode)
-+{
-+#ifndef KSU_KPROBES_HOOK
-+	if (!ksu_su_compat_enabled)
-+		return 0;
-+#endif
-+
-+	if (!current->mm) {
-+		return 0;
-+	}
-+
-+	uid_t uid = current_uid().val;
-+	if (uid % 100000 < 10000) {
-+		// not untrusted_app, ignore it
-+		return 0;
-+	}
-+
-+	if (likely(!ksu_is_allow_uid(uid)))
-+		return 0;
-+
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0) || defined(KSU_OPTIONAL_SELINUX_INODE)
-+	struct inode_security_struct *sec = selinux_inode(inode);
-+#else
-+	struct inode_security_struct *sec = (struct inode_security_struct *)inode->i_security;
-+#endif
-+
-+	if (ksu_file_sid && sec)
-+		sec->sid = ksu_file_sid;
-+	return 0;
-+}
-+
+ int __ksu_handle_devpts(struct inode *inode)
+ {
+ #ifndef KSU_KPROBES_HOOK
+@@ -234,11 +320,96 @@ int __ksu_handle_devpts(struct inode *inode)
+ 	return 0;
+ }
+ 
+-// dead code: devpts handling
+-int __maybe_unused ksu_handle_devpts(struct inode *inode)
 +int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
 +            void *envp, int *flags)
-+{
+ {
+-	return __ksu_handle_devpts(inode);
 +    if (ksu_handle_execveat_ksud(fd, filename_ptr, argv, envp, flags)) {
 +        return 0;
 +    }
@@ -995,11 +1004,11 @@ index b06e1813..9b0eda0f 100644
 +    }
 +
 +    return 0;
-+}
+ }
 +#endif // #ifndef CONFIG_KSU_SUSFS
  
- // dead code: devpts handling
- int __maybe_unused ksu_handle_devpts(struct inode *inode)
+ // sucompat: permitted process can execute 'su' to gain root access.
+ void ksu_sucompat_init()
 diff --git a/kernel/sucompat.h b/kernel/sucompat.h
 index 1999af84..6d82243d 100644
 --- a/kernel/sucompat.h
