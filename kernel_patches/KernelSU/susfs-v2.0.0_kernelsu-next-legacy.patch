@@ -107,7 +107,7 @@ index 320aa125..5537666f 100644
 +
  endmenu
 diff --git a/kernel/Makefile b/kernel/Makefile
-index 351b2f3c..b7995c60 100644
+index 351b2f3c..12ed8a05 100644
 --- a/kernel/Makefile
 +++ b/kernel/Makefile
 @@ -3,7 +3,6 @@ kernelsu-objs += allowlist.o
@@ -118,7 +118,37 @@ index 351b2f3c..b7995c60 100644
  kernelsu-objs += throne_tracker.o
  kernelsu-objs += pkg_observer.o
  kernelsu-objs += setuid_hook.o
-@@ -226,4 +225,14 @@ compdb:
+@@ -86,29 +85,6 @@ endif
+ $(info -- KernelSU-Next Manager signature size: $(KSU_NEXT_MANAGER_SIZE))
+ $(info -- KernelSU-Next Manager signature hash: $(KSU_NEXT_MANAGER_HASH))
+ 
+-# RKSU: checks for available hook
+-## Logic flipped for HAVE_KSU_HOOK: 0 is success, 1 is failure
+-HAVE_KSU_HOOK ?= 1
+-
+-# Checks hooks state
+-ifeq ($(CONFIG_KSU_KPROBES_HOOK), y)
+-$(info -- KernelSU: Hook mode: Kprobes)
+-ccflags-y += -DKSU_KPROBES_HOOK
+-# Let's make it 0, so it would pass.
+-HAVE_KSU_HOOK := 0
+-endif
+-
+-ifeq ($(CONFIG_KSU_MANUAL_HOOK), y)
+-HAVE_KSU_HOOK := $(shell grep -q "ksu_handle_faccessat" $(srctree)/fs/open.c; echo $$?)
+-ifeq ($(HAVE_KSU_HOOK),0)
+-$(info -- KernelSU: Hook mode: Manual)
+-endif
+-endif
+-
+-ifneq ($(HAVE_KSU_HOOK),0)
+-$(error -- KernelSU: No hooks were defined, please integrate manual hooks in your kernel!)
+-endif
+-
+ # some backports
+ ifneq ($(shell grep -Eq "^static int can_umount" $(srctree)/fs/namespace.c; echo $$?),0)
+ $(info -- KSU_NEXT: adding function 'static int can_umount(const struct path *path, int flags);' to $(srctree)/fs/namespace.c)
+@@ -226,4 +202,14 @@ compdb:
  clean:
  	make -C $(KDIR) M=$(MDIR) clean
  
