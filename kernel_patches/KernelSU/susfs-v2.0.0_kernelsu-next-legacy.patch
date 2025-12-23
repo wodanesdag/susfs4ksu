@@ -609,7 +609,7 @@ index 750d4f49..f4edf0b7 100644
  
  #endif
 diff --git a/kernel/setuid_hook.c b/kernel/setuid_hook.c
-index 69a47bbe..bbbec09f 100644
+index 69a47bbe..a9848d08 100644
 --- a/kernel/setuid_hook.c
 +++ b/kernel/setuid_hook.c
 @@ -15,6 +15,9 @@
@@ -664,7 +664,7 @@ index 69a47bbe..bbbec09f 100644
  int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
  {
      // we rely on the fact that zygote always call setresuid(3) with same uids
-@@ -138,11 +166,127 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+@@ -138,11 +166,123 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
  	}
  #endif
  
@@ -717,15 +717,7 @@ index 69a47bbe..bbbec09f 100644
 +extern void susfs_try_umount(uid_t uid);
 +#endif // #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
 +
-+    // if on private space, see if its possibly the manager
-+    if (new_uid > PER_USER_RANGE && new_uid % PER_USER_RANGE == ksu_get_manager_uid()) {
-+        ksu_set_manager_uid(new_uid);
-+    }
-+
-+    if (ksu_get_manager_uid() == new_uid) {
-+        pr_info("install fd for manager: %d\n", new_uid);
-+        ksu_install_fd();
-+        spin_lock_irq(&current->sighand->siglock);
++    if (ksu_get_manager_appid() == new_uid % PER_USER_RANGE) {
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
 +        ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
 +#ifdef KSU_KPROBES_HOOK
@@ -734,7 +726,15 @@ index 69a47bbe..bbbec09f 100644
 +#else
 +		disable_seccomp(current);
 +#endif
-+        spin_unlock_irq(&current->sighand->siglock);
++        pr_info("install fd for manager: %d\n", new_uid);
++        struct callback_head *cb = kzalloc(sizeof(*cb), GFP_ATOMIC);
++        if (!cb)
++            return 0;
++        cb->func = ksu_install_manager_fd_tw_func;
++        if (task_work_add(current, cb, TWA_RESUME)) {
++            kfree(cb);
++            pr_warn("install manager fd add task_work failed\n");
++        }
 +        return 0;
 +    }
 +
@@ -747,9 +747,7 @@ index 69a47bbe..bbbec09f 100644
 +    if (ksu_is_allow_uid_for_current(new_uid)) {
 +        if (current->seccomp.mode == SECCOMP_MODE_FILTER &&
 +            current->seccomp.filter) {
-+            spin_lock_irq(&current->sighand->siglock);
 +            ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
-+            spin_unlock_irq(&current->sighand->siglock);
 +        }
 +#ifdef KSU_KPROBES_HOOK
 +		ksu_set_task_tracepoint_flag(current);
@@ -759,9 +757,7 @@ index 69a47bbe..bbbec09f 100644
 +    }
 +#else
 +	if (ksu_is_allow_uid_for_current(new_uid)) {
-+		spin_lock_irq(&current->sighand->siglock);
 +		disable_seccomp(current);
-+		spin_unlock_irq(&current->sighand->siglock);
 +	}
 +#endif
 +
