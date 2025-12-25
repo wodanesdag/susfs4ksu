@@ -1,5 +1,17 @@
+diff --git a/kernel/Kbuild b/kernel/Kbuild
+index 458c6974..84f80185 100644
+--- a/kernel/Kbuild
++++ b/kernel/Kbuild
+@@ -3,7 +3,6 @@ kernelsu-objs += allowlist.o
+ kernelsu-objs += app_profile.o
+ kernelsu-objs += apk_sign.o
+ kernelsu-objs += sucompat.o
+-kernelsu-objs += syscall_hook_manager.o
+ kernelsu-objs += throne_tracker.o
+ kernelsu-objs += pkg_observer.o
+ kernelsu-objs += setuid_hook.o
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index 320aa125..5537666f 100644
+index 320aa125..cd939042 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
 @@ -35,4 +35,103 @@ config KSU_KPROBES_HOOK
